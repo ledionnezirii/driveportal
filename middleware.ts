@@ -1,32 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifyToken } from '@/lib/auth'
+import { jwtVerify } from 'jose'
 
 const adminOnlyPaths = ['/api/folders', '/api/files/upload', '/api/groups', '/api/permissions']
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '')
 
   if (!token) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const user = verifyToken(token)
+  try {
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET!)
+    const { payload } = await jwtVerify(token, secret)
+    const user = payload as { id: string; email: string; role: string }
 
-  if (!user) {
+    const isAdminPath = adminOnlyPaths.some(path => req.nextUrl.pathname.startsWith(path))
+
+    if (isAdminPath && user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const requestHeaders = new Headers(req.headers)
+    requestHeaders.set('x-user-id', user.id)
+    requestHeaders.set('x-user-role', user.role)
+
+    return NextResponse.next({ request: { headers: requestHeaders } })
+  } catch {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
-  const isAdminPath = adminOnlyPaths.some(path => req.nextUrl.pathname.startsWith(path))
-
-  if (isAdminPath && user.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const requestHeaders = new Headers(req.headers)
-  requestHeaders.set('x-user-id', user.id)
-  requestHeaders.set('x-user-role', user.role)
-
-  return NextResponse.next({ request: { headers: requestHeaders } })
 }
 
 export const config = {
