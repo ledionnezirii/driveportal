@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const adminOnlyPaths = ['/api/folders', '/api/files/upload', '/api/groups', '/api/permissions']
+const adminOnlyMethods = ['DELETE', 'PUT', 'PATCH']
 
 export async function middleware(req: NextRequest) {
   const token = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -16,8 +17,9 @@ export async function middleware(req: NextRequest) {
     const user = payload as { id: string; email: string; role: string }
 
     const isAdminPath = adminOnlyPaths.some(path => req.nextUrl.pathname.startsWith(path))
+    const isAdminMethod = adminOnlyMethods.includes(req.method)
 
-    if (isAdminPath && user.role !== 'admin') {
+    if ((isAdminPath || isAdminMethod) && user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

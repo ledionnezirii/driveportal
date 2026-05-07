@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { supabase } from '@/lib/supabase'
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION!,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+})
 
 export async function POST(req: NextRequest) {
   const adminId = req.headers.get('x-user-id')
@@ -16,15 +25,14 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(bytes)
   const storagePath = `${folderId}/${Date.now()}_${file.name}`
 
-  const { error: uploadError } = await supabase.storage
-    .from('files')
-    .upload(storagePath, buffer, { contentType: file.type })
+  await s3.send(new PutObjectCommand({
+    Bucket: process.env.AWS_BUCKET_NAME!,
+    Key: storagePath,
+    Body: buffer,
+    ContentType: file.type,
+  }))
 
-  if (uploadError) {
-    return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
-  }
-
-  const { data: fileRecord, error: dbError } = await supabase
+  const { data: fileRecord, error } = await supabase
     .from('files')
     .insert({
       folder_id: folderId,
@@ -35,7 +43,7 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (dbError) {
+  if (error) {
     return NextResponse.json({ error: 'Failed to save file record' }, { status: 500 })
   }
 
