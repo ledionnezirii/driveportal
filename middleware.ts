@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
-const adminOnlyPaths = ['/api/folders', '/api/files/upload', '/api/groups', '/api/permissions']
+const adminOnlyPaths = ['/api/folders', '/api/files/upload', '/api/groups', '/api/permissions', '/api/users']
 const adminOnlyMethods = ['DELETE', 'PUT', 'PATCH']
 
 export async function middleware(req: NextRequest) {
@@ -16,7 +16,9 @@ export async function middleware(req: NextRequest) {
     const { payload } = await jwtVerify(token, secret)
     const user = payload as { id: string; email: string; role: string }
 
-    const isAdminPath = adminOnlyPaths.some(path => req.nextUrl.pathname.startsWith(path))
+    const pathname = req.nextUrl.pathname
+    const isFilesListRoute = pathname === '/api/files' && req.method === 'GET'
+    const isAdminPath = adminOnlyPaths.some(path => pathname.startsWith(path)) || isFilesListRoute
     const isAdminMethod = adminOnlyMethods.includes(req.method)
 
     if ((isAdminPath || isAdminMethod) && user.role !== 'admin') {
@@ -34,5 +36,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/api/folders/:path*', '/api/files/:path*', '/api/groups/:path*', '/api/permissions/:path*', '/api/dashboard/:path*'],
+  matcher: ['/api/folders', '/api/folders/:path*', '/api/files', '/api/files/:path*', '/api/groups', '/api/groups/:path*', '/api/permissions', '/api/permissions/:path*', '/api/dashboard/:path*', '/api/users', '/api/users/:path*'],
 }
