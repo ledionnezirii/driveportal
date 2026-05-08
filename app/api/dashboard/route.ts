@@ -22,20 +22,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ folders: [], files: [] })
   }
 
-  const fileIds = permissions.filter(p => p.file_id).map(p => p.file_id)
-  const folderIds = permissions.filter(p => p.folder_id).map(p => p.folder_id)
+  const fileIds = [...new Set(permissions.filter(p => p.file_id).map(p => p.file_id))]
+  const folderIds = [...new Set(permissions.filter(p => p.folder_id).map(p => p.folder_id))]
 
-  const [filesResult, foldersResult] = await Promise.all([
+  const [filesResult, foldersResult, folderFilesResult] = await Promise.all([
     fileIds.length > 0
       ? supabase.from('files').select('id, original_name, folder_id, created_at').in('id', fileIds)
       : { data: [] },
     folderIds.length > 0
       ? supabase.from('folders').select('id, name, created_at').in('id', folderIds)
       : { data: [] },
+    folderIds.length > 0
+      ? supabase.from('files').select('id, original_name, folder_id, created_at').in('folder_id', folderIds)
+      : { data: [] },
   ])
+
+  const directFiles = filesResult.data ?? []
+  const folderFiles = folderFilesResult.data ?? []
+
+  // merge files, avoid duplicates (file might have both direct + folder permission)
+  const allFileIds = new Set(directFiles.map(f => f.id))
+  const mergedFiles = [
+    ...directFiles,
+    ...folderFiles.filter(f => !allFileIds.has(f.id)),
+  ]
 
   return NextResponse.json({
     folders: foldersResult.data ?? [],
-    files: filesResult.data ?? [],
+    files: mergedFiles,
   })
 }

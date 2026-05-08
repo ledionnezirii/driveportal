@@ -9,6 +9,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
   }
 
+  const { data: existing } = await supabase
+    .from('user_groups')
+    .select('user_id')
+    .eq('group_id', groupId)
+    .eq('user_id', user_id)
+    .maybeSingle()
+
+  if (existing) {
+    return NextResponse.json({ error: 'User is already in this group' }, { status: 409 })
+  }
+
   const { error } = await supabase
     .from('user_groups')
     .insert({ group_id: groupId, user_id })
