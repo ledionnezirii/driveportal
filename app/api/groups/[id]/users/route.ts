@@ -31,6 +31,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   return NextResponse.json({ message: 'User added to group' }, { status: 201 })
 }
 
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: groupId } = await params
+  const { user_id } = await req.json()
+
+  if (!user_id) {
+    return NextResponse.json({ error: 'user_id is required' }, { status: 400 })
+  }
+
+  const { error } = await supabase
+    .from('user_groups')
+    .delete()
+    .eq('group_id', groupId)
+    .eq('user_id', user_id)
+
+  if (error) {
+    return NextResponse.json({ error: 'Failed to remove user from group' }, { status: 500 })
+  }
+
+  return NextResponse.json({ message: 'User removed from group' })
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: groupId } = await params
 

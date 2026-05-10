@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface ToastProps {
   message: string
@@ -10,12 +10,13 @@ interface ToastProps {
 
 export function Toast({ message, ok, onDone }: ToastProps) {
   const [visible, setVisible] = useState(false)
+  const onDoneRef = useRef(onDone)
 
   useEffect(() => {
     setVisible(true)
     const t = setTimeout(() => {
       setVisible(false)
-      setTimeout(onDone, 300)
+      setTimeout(() => onDoneRef.current(), 300)
     }, 3000)
     return () => clearTimeout(t)
   }, [])

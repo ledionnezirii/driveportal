@@ -47,6 +47,7 @@ export const api = {
         body: JSON.stringify({ name }),
       })),
     delete: (id: string) => authFetch(`/api/folders/${id}`, { method: 'DELETE' }),
+    groups: (id: string) => json<{ group_id: string; groups: { name: string } }[]>(authFetch(`/api/folders/${id}`)),
   },
 
   files: {
@@ -76,6 +77,12 @@ export const api = {
     addUser: (groupId: string, userId: string) =>
       json(authFetch(`/api/groups/${groupId}/users`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId }),
+      })),
+    removeUser: (groupId: string, userId: string) =>
+      json(authFetch(`/api/groups/${groupId}/users`, {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId }),
       })),

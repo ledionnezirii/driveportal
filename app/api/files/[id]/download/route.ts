@@ -13,16 +13,8 @@ const s3 = new S3Client({
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const userId = req.headers.get('x-user-id')!
+  const userRole = req.headers.get('x-user-role')
 
-  const { data: userGroups } = await supabase
-    .from('user_groups')
-    .select('group_id')
-    .eq('user_id', userId)
-
-  const groupIds = userGroups?.map(ug => ug.group_id) ?? []
-  const userFilter = `user_id.eq.${userId}${groupIds.length > 0 ? `,group_id.in.(${groupIds.join(',')})` : ''}`
-
-  // get the file's folder so we can check folder-level permissions
   const { data: file } = await supabase
     .from('files')
     .select('original_name, storage_path, folder_id')
@@ -33,14 +25,23 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: 'File not found' }, { status: 404 })
   }
 
-  // check file-level permission OR folder-level permission
-  const [{ data: filePerm }, { data: folderPerm }] = await Promise.all([
-    supabase.from('permissions').select('id').eq('file_id', id).or(userFilter).maybeSingle(),
-    supabase.from('permissions').select('id').eq('folder_id', file.folder_id).or(userFilter).maybeSingle(),
-  ])
+  if (userRole !== 'admin') {
+    const { data: userGroups } = await supabase
+      .from('user_groups')
+      .select('group_id')
+      .eq('user_id', userId)
 
-  if (!filePerm && !folderPerm) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    const groupIds = userGroups?.map(ug => ug.group_id) ?? []
+    const userFilter = `user_id.eq.${userId}${groupIds.length > 0 ? `,group_id.in.(${groupIds.join(',')})` : ''}`
+
+    const [{ data: filePerm }, { data: folderPerm }] = await Promise.all([
+      supabase.from('permissions').select('id').eq('file_id', id).or(userFilter).maybeSingle(),
+      supabase.from('permissions').select('id').eq('folder_id', file.folder_id).or(userFilter).maybeSingle(),
+    ])
+
+    if (!filePerm && !folderPerm) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
   }
 
   const command = new GetObjectCommand({
