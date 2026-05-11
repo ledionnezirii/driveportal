@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase'
 
+export async function GET() {
+  const { data, error } = await supabase
+    .from('permissions')
+    .select('id, file_id, folder_id, user_id, group_id, files (original_name), folders (name), users (email), groups (name)')
+
+  if (error) {
+    return NextResponse.json({ error: 'Failed to fetch permissions' }, { status: 500 })
+  }
+
+  return NextResponse.json(data)
+}
+
 export async function POST(req: NextRequest) {
   const { file_id, folder_id, user_id, group_id } = await req.json()
 

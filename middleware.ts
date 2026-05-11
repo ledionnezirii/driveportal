@@ -5,7 +5,7 @@ const adminOnlyPaths = ['/api/folders', '/api/files/upload', '/api/groups', '/ap
 const adminOnlyMethods = ['DELETE', 'PUT', 'PATCH']
 
 export async function middleware(req: NextRequest) {
-  const token = req.headers.get('authorization')?.replace('Bearer ', '')
+  const token = req.cookies.get('token')?.value
 
   if (!token) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

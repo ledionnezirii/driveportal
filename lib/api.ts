@@ -1,11 +1,7 @@
 function authFetch(url: string, options: RequestInit = {}) {
-  const token = localStorage.getItem('token')
   return fetch(url, {
     ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${token}`,
-    },
+    credentials: 'same-origin',
   })
 }
 
@@ -21,21 +17,25 @@ async function json<T>(res: Promise<Response> | Response): Promise<T> {
 export const api = {
   auth: {
     login: (email: string, password: string) =>
-      json<{ token: string; user: { id: string; email: string; role: string } }>(
+      json<{ user: { id: string; email: string; role: string } }>(
         fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, password }),
+          credentials: 'same-origin',
         })
       ),
     register: (email: string, password: string) =>
-      json<{ token: string; user: { id: string; email: string; role: string } }>(
+      json<{ user: { id: string; email: string; role: string } }>(
         fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password, role: 'user' }),
+          body: JSON.stringify({ email, password }),
+          credentials: 'same-origin',
         })
       ),
+    logout: () =>
+      fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }),
   },
 
   folders: {
@@ -73,6 +73,7 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       })),
+    delete: (id: string) => authFetch(`/api/groups/${id}`, { method: 'DELETE' }),
     members: (groupId: string) => json(authFetch(`/api/groups/${groupId}/users`)),
     addUser: (groupId: string, userId: string) =>
       json(authFetch(`/api/groups/${groupId}/users`, {
@@ -89,12 +90,24 @@ export const api = {
   },
 
   permissions: {
+    list: () => json<{
+      id: string
+      file_id: string | null
+      folder_id: string | null
+      user_id: string | null
+      group_id: string | null
+      files: { original_name: string } | null
+      folders: { name: string } | null
+      users: { email: string } | null
+      groups: { name: string } | null
+    }[]>(authFetch('/api/permissions')),
     grant: (payload: { file_id?: string; folder_id?: string; user_id?: string; group_id?: string }) =>
       json(authFetch('/api/permissions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })),
+    revoke: (id: string) => authFetch(`/api/permissions/${id}`, { method: 'DELETE' }),
   },
 
   users: {
@@ -106,6 +119,7 @@ export const api = {
       json<{
         files: { id: string; original_name: string; folder_id: string; created_at: string }[]
         folders: { id: string; name: string; created_at: string }[]
+        groups: { id: string; name: string }[]
       }>(authFetch('/api/dashboard')),
   },
 }

@@ -9,6 +9,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Email and password are required' }, { status: 400 })
   }
 
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
+  }
+
   const { data: existing } = await supabase
     .from('users')
     .select('id')
@@ -34,5 +38,13 @@ export async function POST(req: NextRequest) {
 
   const token = signToken({ id: user.id, email: user.email, role: user.role })
 
-  return NextResponse.json({ token, user }, { status: 201 })
+  const response = NextResponse.json({ user }, { status: 201 })
+  response.cookies.set('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 7,
+  })
+  return response
 }

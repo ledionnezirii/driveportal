@@ -32,14 +32,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       .eq('user_id', userId)
 
     const groupIds = userGroups?.map(ug => ug.group_id) ?? []
-    const userFilter = `user_id.eq.${userId}${groupIds.length > 0 ? `,group_id.in.(${groupIds.join(',')})` : ''}`
 
-    const [{ data: filePerm }, { data: folderPerm }] = await Promise.all([
-      supabase.from('permissions').select('id').eq('file_id', id).or(userFilter).maybeSingle(),
-      supabase.from('permissions').select('id').eq('folder_id', file.folder_id).or(userFilter).maybeSingle(),
+    const [
+      { data: directFilePerm },
+      { data: directFolderPerm },
+    ] = await Promise.all([
+      supabase.from('permissions').select('id').eq('file_id', id).eq('user_id', userId).maybeSingle(),
+      supabase.from('permissions').select('id').eq('folder_id', file.folder_id).eq('user_id', userId).maybeSingle(),
     ])
 
-    if (!filePerm && !folderPerm) {
+    let groupFilePerm = null
+    let groupFolderPerm = null
+    if (groupIds.length > 0) {
+      const [{ data: gfp }, { data: gfolp }] = await Promise.all([
+        supabase.from('permissions').select('id').eq('file_id', id).in('group_id', groupIds).maybeSingle(),
+        supabase.from('permissions').select('id').eq('folder_id', file.folder_id).in('group_id', groupIds).maybeSingle(),
+      ])
+      groupFilePerm = gfp
+      groupFolderPerm = gfolp
+    }
+
+    if (!directFilePerm && !directFolderPerm && !groupFilePerm && !groupFolderPerm) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
   }
@@ -52,9 +65,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const s3Response = await s3.send(command)
   const buffer = Buffer.from(await s3Response.Body!.transformToByteArray())
 
+  const safeFilename = file.original_name.replace(/[\r\n"]/g, '')
+
   return new NextResponse(buffer, {
     headers: {
-      'Content-Disposition': `attachment; filename="${file.original_name}"`,
+      'Content-Disposition': `attachment; filename="${safeFilename}"`,
       'Content-Type': 'application/octet-stream',
     },
   })

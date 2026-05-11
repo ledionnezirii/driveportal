@@ -6,20 +6,23 @@ export async function GET(req: NextRequest) {
 
   const { data: userGroups } = await supabase
     .from('user_groups')
-    .select('group_id')
+    .select('group_id, groups(id, name)')
     .eq('user_id', userId)
 
   const groupIds = userGroups?.map(ug => ug.group_id) ?? []
+  const groups = userGroups?.map(ug => ug.groups).filter(Boolean) ?? []
 
-  const { data: permissions } = await supabase
-    .from('permissions')
-    .select('file_id, folder_id')
-    .or(
-      `user_id.eq.${userId}${groupIds.length > 0 ? `,group_id.in.(${groupIds.join(',')})` : ''}`
-    )
+  const [{ data: directPerms }, { data: groupPerms }] = await Promise.all([
+    supabase.from('permissions').select('file_id, folder_id').eq('user_id', userId),
+    groupIds.length > 0
+      ? supabase.from('permissions').select('file_id, folder_id').in('group_id', groupIds)
+      : { data: [] },
+  ])
 
-  if (!permissions || permissions.length === 0) {
-    return NextResponse.json({ folders: [], files: [] })
+  const permissions = [...(directPerms ?? []), ...(groupPerms ?? [])]
+
+  if (permissions.length === 0) {
+    return NextResponse.json({ folders: [], files: [], groups })
   }
 
   const fileIds = [...new Set(permissions.filter(p => p.file_id).map(p => p.file_id))]
@@ -50,5 +53,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     folders: foldersResult.data ?? [],
     files: mergedFiles,
+    groups,
   })
 }

@@ -18,7 +18,6 @@ export default function RegisterPage() {
     setError('')
     try {
       const data = await api.auth.register(email, password)
-      localStorage.setItem('token', data.token)
       localStorage.setItem('role', data.user.role)
       router.push('/dashboard')
     } catch (err: unknown) {

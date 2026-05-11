@@ -20,7 +20,6 @@ export default function LoginPage() {
     setError('')
     try {
       const data = await api.auth.login(email, password)
-      localStorage.setItem('token', data.token)
       localStorage.setItem('role', data.user.role)
       router.push(data.user.role === 'admin' ? '/admin' : '/dashboard')
     } catch (err: unknown) {

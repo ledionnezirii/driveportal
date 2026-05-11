@@ -14,6 +14,17 @@ interface FolderItem { id: string; name: string }
 interface UserItem { id: string; email: string; role: string }
 interface FileItem { id: string; original_name: string; folder_id: string; folders?: { name: string } }
 interface GroupItem { id: string; name: string }
+interface PermissionItem {
+  id: string
+  file_id: string | null
+  folder_id: string | null
+  user_id: string | null
+  group_id: string | null
+  files: { original_name: string } | null
+  folders: { name: string } | null
+  users: { email: string } | null
+  groups: { name: string } | null
+}
 
 export default function AdminPage() {
   const router = useRouter()
@@ -21,6 +32,7 @@ export default function AdminPage() {
   const [users, setUsers] = useState<UserItem[]>([])
   const [files, setFiles] = useState<FileItem[]>([])
   const [groups, setGroups] = useState<GroupItem[]>([])
+  const [permissions, setPermissions] = useState<PermissionItem[]>([])
   const [folderName, setFolderName] = useState('')
   const [uploadFolderId, setUploadFolderId] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -55,16 +67,18 @@ export default function AdminPage() {
   const fetchAll = useCallback(async () => {
     setDataLoading(true)
     try {
-      const [fData, uData, filesData, gData] = await Promise.all([
+      const [fData, uData, filesData, gData, pData] = await Promise.all([
         api.folders.list(),
         api.users.list(),
         api.files.list(),
         api.groups.list(),
+        api.permissions.list(),
       ])
       setFolders(fData)
       setUsers(uData)
       setFiles(filesData)
       setGroups(gData)
+      setPermissions(pData)
     } catch {
       showToast('Failed to load data', false)
     } finally {
@@ -73,8 +87,9 @@ export default function AdminPage() {
   }, [showToast])
 
   useEffect(() => {
-    if (!localStorage.getItem('token')) { router.push('/login'); return }
-    if (localStorage.getItem('role') !== 'admin') { router.push('/dashboard'); return }
+    const role = localStorage.getItem('role')
+    if (!role) { router.push('/login'); return }
+    if (role !== 'admin') { router.push('/dashboard'); return }
     fetchAll()
   }, [fetchAll, router])
 
@@ -178,6 +193,27 @@ export default function AdminPage() {
     finally { setLoading(false) }
   }
 
+  async function revokePermission(id: string) {
+    try {
+      await api.permissions.revoke(id)
+      setPermissions(prev => prev.filter(p => p.id !== id))
+      showToast('Access revoked', true)
+    } catch { showToast('Failed to revoke access', false) }
+  }
+
+  function deleteGroup(id: string) {
+    setConfirm({
+      message: 'This will permanently delete the group and all its permissions.',
+      onConfirm: async () => {
+        try {
+          await api.groups.delete(id)
+          showToast('Group deleted', true)
+          fetchAll()
+        } catch { showToast('Failed to delete group', false) }
+      }
+    })
+  }
+
   async function createGroup(e: React.FormEvent) {
     e.preventDefault()
     if (!groupName.trim()) return
@@ -203,8 +239,9 @@ export default function AdminPage() {
     finally { setLoading(false) }
   }
 
-  function handleLogout() {
-    localStorage.clear()
+  async function handleLogout() {
+    await api.auth.logout()
+    localStorage.removeItem('role')
     router.push('/login')
   }
 
@@ -359,7 +396,7 @@ export default function AdminPage() {
                           type="button"
                           title="Delete folder"
                           onClick={() => deleteFolder(folder.id)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors opacity-0 group-hover/row:opacity-100"
+                          className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors"
                         >
                           <Trash2 size={14} />
                         </button>
@@ -416,7 +453,7 @@ export default function AdminPage() {
                             deleteFile(file.id)
                             setSelectedFolder(prev => prev)
                           }}
-                          className="opacity-0 group-hover/file:opacity-100 transition-opacity text-red-400 hover:text-red-300 p-1 rounded-lg"
+                          className="text-red-400 hover:text-red-300 p-1 rounded-lg"
                         >
                           <Trash2 size={13} />
                         </button>
@@ -487,57 +524,99 @@ export default function AdminPage() {
 
         {/* PERMISSIONS TAB */}
         {activeTab === 'permissions' && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="bg-white/4 border border-white/8 rounded-xl p-4">
-              <h2 className="text-base font-semibold mb-1">Grant File Access</h2>
-              <p className="text-sm text-gray-500 mb-5">Give a user access to a specific file.</p>
-              <form onSubmit={grantPermission} className="space-y-4">
-                <div>
-                  <label className={labelClass}>File</label>
-                  <select title="Select file" value={permFileId} onChange={e => setPermFileId(e.target.value)} className={inputClass}>
-                    <option value="">Select file...</option>
-                    {files.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.folders?.name ? `${f.folders.name} / ${f.original_name}` : f.original_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className={labelClass}>User</label>
-                  <select title="Select user" value={permUserId} onChange={e => setPermUserId(e.target.value)} className={inputClass}>
-                    <option value="">Select user...</option>
-                    {users.filter(u => u.role === 'user').map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
-                  </select>
-                </div>
-                <Button type="submit" loading={loading} disabled={!permFileId || !permUserId} className="w-full">
-                  {loading ? 'Granting...' : 'Grant File Access'}
-                </Button>
-              </form>
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div className="bg-white/4 border border-white/8 rounded-xl p-4">
+                <h2 className="text-base font-semibold mb-1">Grant File Access</h2>
+                <p className="text-sm text-gray-500 mb-5">Give a user access to a specific file.</p>
+                <form onSubmit={grantPermission} className="space-y-4">
+                  <div>
+                    <label className={labelClass}>File</label>
+                    <select title="Select file" value={permFileId} onChange={e => setPermFileId(e.target.value)} className={inputClass}>
+                      <option value="">Select file...</option>
+                      {files.map(f => (
+                        <option key={f.id} value={f.id}>
+                          {f.folders?.name ? `${f.folders.name} / ${f.original_name}` : f.original_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>User</label>
+                    <select title="Select user" value={permUserId} onChange={e => setPermUserId(e.target.value)} className={inputClass}>
+                      <option value="">Select user...</option>
+                      {users.filter(u => u.role === 'user').map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
+                    </select>
+                  </div>
+                  <Button type="submit" loading={loading} disabled={!permFileId || !permUserId} className="w-full">
+                    {loading ? 'Granting...' : 'Grant File Access'}
+                  </Button>
+                </form>
+              </div>
+
+              <div className="bg-white/4 border border-white/8 rounded-xl p-4">
+                <h2 className="text-base font-semibold mb-1">Grant Folder Access</h2>
+                <p className="text-sm text-gray-500 mb-5">Give a user access to all files inside a folder.</p>
+                <form onSubmit={grantFolderPermission} className="space-y-4">
+                  <div>
+                    <label className={labelClass}>Folder</label>
+                    <select title="Select folder" value={permFolderId} onChange={e => setPermFolderId(e.target.value)} className={inputClass}>
+                      <option value="">Select folder...</option>
+                      {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className={labelClass}>User</label>
+                    <select title="Select user" value={permFolderUserId} onChange={e => setPermFolderUserId(e.target.value)} className={inputClass}>
+                      <option value="">Select user...</option>
+                      {users.filter(u => u.role === 'user').map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
+                    </select>
+                  </div>
+                  <Button type="submit" loading={loading} disabled={!permFolderId || !permFolderUserId} className="w-full">
+                    {loading ? 'Granting...' : 'Grant Folder Access'}
+                  </Button>
+                </form>
+              </div>
             </div>
 
-            <div className="bg-white/4 border border-white/8 rounded-xl p-4">
-              <h2 className="text-base font-semibold mb-1">Grant Folder Access</h2>
-              <p className="text-sm text-gray-500 mb-5">Give a user access to all files inside a folder.</p>
-              <form onSubmit={grantFolderPermission} className="space-y-4">
-                <div>
-                  <label className={labelClass}>Folder</label>
-                  <select title="Select folder" value={permFolderId} onChange={e => setPermFolderId(e.target.value)} className={inputClass}>
-                    <option value="">Select folder...</option>
-                    {folders.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                  </select>
+            {/* Existing permissions list */}
+            <div className="bg-white/4 border border-white/8 rounded-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-white/8">
+                <h2 className="text-sm font-semibold">Existing Permissions</h2>
+                <p className="text-xs text-gray-500 mt-0.5">{permissions.length} permission{permissions.length !== 1 ? 's' : ''} granted</p>
+              </div>
+              {permissions.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <Shield size={32} className="mx-auto mb-2 text-gray-700" />
+                  <p className="text-sm text-gray-500">No permissions granted yet.</p>
                 </div>
-                <div>
-                  <label className={labelClass}>User</label>
-                  <select title="Select user" value={permFolderUserId} onChange={e => setPermFolderUserId(e.target.value)} className={inputClass}>
-                    <option value="">Select user...</option>
-                    {users.filter(u => u.role === 'user').map(u => <option key={u.id} value={u.id}>{u.email}</option>)}
-                  </select>
+              ) : (
+                <div className="divide-y divide-white/6">
+                  {permissions.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 px-5 py-3 hover:bg-white/4 transition-colors group/perm">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-200 truncate">
+                          {p.users?.email ?? p.groups?.name}
+                          <span className="text-gray-500 mx-1.5">&rarr;</span>
+                          {p.files?.original_name ?? p.folders?.name}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {p.users ? 'User' : 'Group'} &middot; {p.files ? 'File' : 'Folder'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        title="Revoke access"
+                        onClick={() => revokePermission(p.id)}
+                        className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg px-2.5 py-1 shrink-0"
+                      >
+                        <Trash2 size={11} />
+                        Revoke
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <Button type="submit" loading={loading} disabled={!permFolderId || !permFolderUserId} className="w-full">
-                  {loading ? 'Granting...' : 'Grant Folder Access'}
-                </Button>
-              </form>
+              )}
             </div>
           </div>
         )}
@@ -569,18 +648,27 @@ export default function AdminPage() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                   {groups.map(g => (
-                    <button
-                      key={g.id}
-                      type="button"
-                      onClick={() => openGroup(g)}
-                      className="flex items-center gap-3 bg-white/6 border border-white/10 rounded-xl px-4 py-3 hover:bg-white/10 hover:border-white/20 transition-all text-left group/card"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-                        <Users size={15} className="text-blue-400" />
-                      </div>
-                      <span className="text-sm font-medium flex-1">{g.name}</span>
-                      <ChevronRight size={14} className="text-gray-600 group-hover/card:text-gray-400 transition-colors" />
-                    </button>
+                    <div key={g.id} className="relative group/card flex items-center bg-white/6 border border-white/10 rounded-xl hover:bg-white/10 hover:border-white/20 transition-all">
+                      <button
+                        type="button"
+                        onClick={() => openGroup(g)}
+                        className="flex items-center gap-3 px-4 py-3 flex-1 text-left min-w-0"
+                      >
+                        <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
+                          <Users size={15} className="text-blue-400" />
+                        </div>
+                        <span className="text-sm font-medium truncate flex-1">{g.name}</span>
+                        <ChevronRight size={14} className="text-gray-600 group-hover/card:text-gray-400 transition-colors shrink-0" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete group"
+                        onClick={() => deleteGroup(g.id)}
+                        className="flex items-center text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 mr-2 rounded-lg shrink-0"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -717,7 +805,7 @@ export default function AdminPage() {
                           setSelectedGroupMembers(prev => prev.filter((_, idx) => idx !== i))
                           showToast('User removed from group', true)
                         }}
-                        className="opacity-0 group-hover/member:opacity-100 transition-opacity flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg px-2.5 py-1"
+                        className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-300 border border-red-500/30 hover:border-red-400/50 rounded-lg px-2.5 py-1"
                       >
                         <Trash2 size={11} />
                         Remove
